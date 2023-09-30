@@ -9,4 +9,4 @@ Custom view - graph.
 Written on jetpack compose canvas using api https://polygon.io/.
 There is a possibility to zoom and scrolling
 
-<img src="[https://cloud.githubusercontent.com/assets/screenshot.jpg](https://github.com/VladislavDobrihlopez/StockChart/assets/105111262/78bf1579-1b8a-433d-a3fa-d983cbcd31b7)https://github.com/VladislavDobrihlopez/StockChart/assets/105111262/78bf1579-1b8a-433d-a3fa-d983cbcd31b7" width="700" height="500">
+<img src="https://github.com/VladislavDobrihlopez/StockChart/assets/105111262/78bf1579-1b8a-433d-a3fa-d983cbcd31b7" width="750" height="500">
