@@ -1,4 +1,4 @@
-package com.example.stockchart.ui.theme
+package com.example.stockchart.presentation.ui.theme
 
 import android.app.Activity
 import android.os.Build
