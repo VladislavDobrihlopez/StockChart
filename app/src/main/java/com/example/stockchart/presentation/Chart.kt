@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.TransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,20 +29,32 @@ fun Chart(stockBars: List<BarInfoDto>, modifier: Modifier = Modifier) {
         mutableStateOf(DEFAULT_NUMBER_OF_VISIBLE_BARS)
     }
 
+    var componentUiSize by remember {
+        mutableStateOf(Size(0f, 0f))
+    }
+
+    var pxPerDollar by remember {
+        mutableStateOf(0f)
+    }
+
+    val widthDistance by remember {
+        derivedStateOf {
+            componentUiSize.width / visibleNumberOfBars
+        }
+    }
+
     var scrolled by remember {
         mutableStateOf(0f)
     }
 
-    var screenSize by remember {
-        mutableStateOf(Size(0f, 0f))
-    }
-
-    var pxPerUnit by remember {
-        mutableStateOf(0f)
-    }
-
-    var barWidth by remember {
-        mutableStateOf(0f)
+    val visibleStockBarsOnScreen by remember {
+        derivedStateOf {
+            val passedBy = (scrolled / widthDistance)
+                .roundToInt()
+                .coerceAtLeast(0)
+            val endIndex = (passedBy + visibleNumberOfBars).coerceAtMost(stockBars.size - 1)
+            stockBars.subList(passedBy, endIndex)
+        }
     }
 
     val transform = TransformableState(onTransformation = { zoomChange, panChange, _ ->
@@ -49,17 +62,18 @@ fun Chart(stockBars: List<BarInfoDto>, modifier: Modifier = Modifier) {
             .roundToInt()
             .coerceIn(DEFAULT_MIN_NUMBER_OF_VISIBLE_BARS, stockBars.size)
 
-        scrolled = (scrolled + panChange.x).coerceIn(0f, barWidth * stockBars.size - screenSize.width)
+        scrolled =
+            (scrolled + panChange.x).coerceIn(
+                0f,
+                abs(widthDistance * stockBars.size - componentUiSize.width)
+            )
     })
 
     Canvas(modifier = modifier.transformable(transform)) {
-        screenSize = size
-        val widthDistance = size.width / visibleNumberOfBars
-        barWidth = widthDistance
-        val maxCost = stockBars.maxOf { it.highest }
-        val minCost = stockBars.minOf { it.lowest }
-        val pxPerDollar = size.height / (maxCost - minCost)
-        pxPerUnit = pxPerDollar
+        componentUiSize = size
+        val maxCost = visibleStockBarsOnScreen.maxOf { it.highest }
+        val minCost = visibleStockBarsOnScreen.minOf { it.lowest }
+        pxPerDollar = size.height / (maxCost - minCost)
         translate(left = scrolled) {
             stockBars.forEachIndexed { index, barInfoDto ->
                 drawLine(
