@@ -3,6 +3,7 @@ package com.example.stockchart.presentation
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.TransformableState
 import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -15,7 +16,14 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.stockchart.data.network.dto.BarInfoDto
 import com.example.stockchart.presentation.ChartState.Companion.DEFAULT_MIN_NUMBER_OF_VISIBLE_BARS
 import kotlin.math.abs
@@ -23,6 +31,7 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 
+@OptIn(ExperimentalTextApi::class)
 @Composable
 fun Chart(stockBars: List<BarInfoDto>, modifier: Modifier = Modifier) {
     var chartState by rememberChartState(stockBars)
@@ -44,6 +53,8 @@ fun Chart(stockBars: List<BarInfoDto>, modifier: Modifier = Modifier) {
         )
     })
 
+    val textMeasurer = rememberTextMeasurer()
+
     Canvas(modifier = modifier
         .transformable(transform)
         .onSizeChanged {
@@ -51,6 +62,7 @@ fun Chart(stockBars: List<BarInfoDto>, modifier: Modifier = Modifier) {
                 chartState.copy(componentUiWidth = it.width.toFloat())
         }
         .clipToBounds()
+        .padding(vertical = 24.dp)
     ) {
         val maxCost = chartState.visibleStockBarsOnScreen.maxOf { it.highest }
         val minCost = chartState.visibleStockBarsOnScreen.minOf { it.lowest }
@@ -58,9 +70,11 @@ fun Chart(stockBars: List<BarInfoDto>, modifier: Modifier = Modifier) {
 
         chartState.visibleStockBarsOnScreen.firstOrNull()?.let {
             drawBoundaryPrices(
+                maxCost,
                 minCost,
                 it.close, // we draw right to left therefore first item is the latest
-                pxPerDollar
+                pxPerDollar,
+                textMeasurer
             )
         }
 
@@ -97,24 +111,36 @@ fun Chart(stockBars: List<BarInfoDto>, modifier: Modifier = Modifier) {
     }
 }
 
+@OptIn(ExperimentalTextApi::class)
 private fun DrawScope.drawBoundaryPrices(
+    maxPriceEver: Float,
     minPriceEver: Float,
     lastPrice: Float,
     pxPerDollar: Float,
+    textMeasurer: TextMeasurer
 ) {
-    drawDashedLine(
+    // min
+    drawDashedLineWithText(
         start = Offset(0f, size.height),
         end = Offset(size.width, size.height),
+        text = minPriceEver.toString(),
+        textMeasurer = textMeasurer
     )
 
-    drawDashedLine(
+    // max
+    drawDashedLineWithText(
         start = Offset(0f, 0f),
         end = Offset(size.width, 0f),
+        text = maxPriceEver.toString(),
+        textMeasurer = textMeasurer
     )
 
-    drawDashedLine(
+    // last
+    drawDashedLineWithText(
         start = Offset(0f, size.height - pxPerDollar * (lastPrice - minPriceEver)),
         end = Offset(size.width, size.height - pxPerDollar * (lastPrice - minPriceEver)),
+        text = lastPrice.toString(),
+        textMeasurer = textMeasurer
     )
 }
 
@@ -134,4 +160,23 @@ private fun DrawScope.drawDashedLine(
             )
         )
     )
+}
+
+@OptIn(ExperimentalTextApi::class)
+private fun DrawScope.drawDashedLineWithText(
+    text: String,
+    textMeasurer: TextMeasurer,
+    start: Offset,
+    end: Offset,
+) {
+    val textResult =
+        textMeasurer.measure(
+            text,
+            TextStyle(fontSize = 14.sp, fontWeight = FontWeight.W700, color = Color.White)
+        )
+    drawText(
+        textLayoutResult = textResult,
+        topLeft = Offset(size.width - textResult.size.width, end.y)
+    )
+    drawDashedLine(start = start, end = end)
 }

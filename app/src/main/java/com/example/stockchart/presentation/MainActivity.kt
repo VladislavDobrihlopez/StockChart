@@ -42,7 +42,6 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color.Black)
-                        .padding(vertical = 32.dp)
                 ) {
                     Button(onClick = { viewModel.onEvent() }) {
                         Text(text = "Request data")
