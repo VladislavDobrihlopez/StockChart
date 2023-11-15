@@ -13,7 +13,7 @@ data class BarInfoDto(
     @SerializedName("l") val lowest: Float,
     @SerializedName("t") val timestamp: Long
 ) {
-    val time: Calendar
+    val calendar: Calendar
         get() = Calendar.getInstance().apply {
             time = Date(timestamp)
         }

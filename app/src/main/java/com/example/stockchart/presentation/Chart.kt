@@ -1,6 +1,9 @@
 package com.example.stockchart.presentation
 
+import android.icu.util.Calendar
+import android.os.Build
 import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.rememberTransformableState
@@ -41,35 +44,41 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.stockchart.data.network.dto.BarInfoDto
 import com.example.stockchart.presentation.ChartState.Companion.DEFAULT_MIN_NUMBER_OF_VISIBLE_BARS
+import java.util.Calendar.SHORT_FORMAT
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 
 
 @Composable
-fun Chart(modifier: Modifier = Modifier) {
-    val viewModel: MainActivityViewModel = viewModel()
+fun Chart(modifier: Modifier = Modifier, viewModel: MainActivityViewModel = viewModel()) {
     val context = LocalContext.current
-
-    when (val state = viewModel.screenState.collectAsState().value) {
+    when (val state =
+        viewModel.screenState.collectAsState().value) { // might be changes to collectAsStateWithLifecycle
         is ScreenState.Content -> {
             val chartState = rememberChartState(state.bars)
             Box(
                 modifier = modifier
                     .background(Color.Black),
             ) {
-                CoreChart(state = chartState, onStateTransformation = { bars, scroll ->
-                    chartState.value = chartState.value.copy(
-                        visibleNumberOfBars = bars,
-                        scrolled = scroll
-                    )
-                }, onChangeSize = {
-                    chartState.value = chartState.value.copy(
-                        componentUiWidth = it.width.toFloat(),
-                        height = it.height.toFloat()
-                    )
-                })
+                CoreChart(
+                    state = chartState,
+                    selectedTimeFrame = state.selectedTimeFrame,
+                    onStateTransformation = { bars, scroll ->
+                        chartState.value = chartState.value.copy(
+                            visibleNumberOfBars = bars,
+                            scrolled = scroll
+                        )
+                    },
+                    onChangeSize = {
+                        chartState.value = chartState.value.copy(
+                            componentUiWidth = it.width.toFloat(),
+                            height = it.height.toFloat()
+                        )
+                    })
 
                 TimeFrames(
                     modifier = Modifier
@@ -138,6 +147,7 @@ fun TimeFrames(
                 } else {
                     Color.Black to Color.White
                 }
+
             AssistChip(
                 onClick = {
                     onClick(timeFrame)
@@ -154,9 +164,11 @@ fun TimeFrames(
     }
 }
 
+@OptIn(ExperimentalTextApi::class)
 @Composable
 private fun CoreChart(
     state: State<ChartState>,
+    selectedTimeFrame: TimeFrame,
     onStateTransformation: (Int, Float) -> Unit,
     onChangeSize: (IntSize) -> Unit,
     modifier: Modifier = Modifier
@@ -175,6 +187,8 @@ private fun CoreChart(
             )
         onStateTransformation(newVisibleNumberOfBars, newScrolledPosition)
     })
+
+    val textMeasurer = rememberTextMeasurer()
 
     Canvas(
         modifier = modifier
@@ -217,6 +231,14 @@ private fun CoreChart(
                         height = pxPerDollar * abs(barInfoDto.open - barInfoDto.close)
                     )
                 )
+
+                drawDelimiters(
+                    timeFrame = selectedTimeFrame,
+                    bar = barInfoDto,
+                    nextBar = if (index < chartState.stockBars.size - 1) chartState.stockBars[index + 1] else null,
+                    textMeasurer = textMeasurer,
+                    offsetX = size.width - index * chartState.widthDistance,
+                )
             }
         }
     }
@@ -244,6 +266,74 @@ private fun PricesText(
             textMeasurer = measurer
         )
     }
+}
+
+@RequiresApi(Build.VERSION_CODES.O)
+@OptIn(ExperimentalTextApi::class)
+private fun DrawScope.drawDelimiters(
+    timeFrame: TimeFrame,
+    bar: BarInfoDto,
+    nextBar: BarInfoDto?,
+    textMeasurer: TextMeasurer,
+    offsetX: Float
+) {
+
+    val calendar = bar.calendar
+    val day = calendar.get(Calendar.DAY_OF_MONTH)
+    val hours = calendar.get(Calendar.HOUR_OF_DAY)
+    val minutes = calendar.get(Calendar.MINUTE)
+
+    val shouldDrawDelimiter = when (timeFrame) {
+        TimeFrame.M_5 -> {
+            minutes == 0
+        }
+
+        TimeFrame.M_15 -> {
+            minutes == 0 && hours % 2 == 0
+        }
+
+        TimeFrame.M_30, TimeFrame.H_1 -> {
+            val nextBarDay = nextBar?.calendar?.get(Calendar.DAY_OF_MONTH)
+            nextBarDay != day
+        }
+    }
+
+    if (!shouldDrawDelimiter) return
+
+    val nameOfMonth =
+        calendar.getDisplayName(Calendar.DAY_OF_WEEK, SHORT_FORMAT, Locale.getDefault())
+
+    val text = when (timeFrame) {
+        TimeFrame.M_5, TimeFrame.M_15 -> {
+            String.format("%02d:00", hours)
+        }
+
+        TimeFrame.M_30, TimeFrame.H_1 -> {
+            String.format("%s %s", day, nameOfMonth)
+        }
+    }
+
+    drawLine(
+        color = Color.White.copy(alpha = 0.5f),
+        start = Offset(offsetX, 0f),
+        end = Offset(offsetX, size.height),
+        strokeWidth = 2f,
+        pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))
+    )
+
+    val textResult =
+        textMeasurer.measure(
+            text,
+            TextStyle(fontSize = 14.sp, fontWeight = FontWeight.W700, color = Color.White)
+        )
+
+    drawText(
+        textLayoutResult = textResult,
+        topLeft = Offset(
+            offsetX - textResult.size.width / 2,
+            size.height - textResult.size.height * 1.5f
+        )
+    )
 }
 
 @OptIn(ExperimentalTextApi::class)
