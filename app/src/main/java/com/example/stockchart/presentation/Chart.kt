@@ -1,14 +1,24 @@
 package com.example.stockchart.presentation
 
+import android.widget.Toast
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -19,6 +29,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -29,7 +40,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import com.example.stockchart.data.network.dto.BarInfoDto
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.stockchart.presentation.ChartState.Companion.DEFAULT_MIN_NUMBER_OF_VISIBLE_BARS
 import kotlin.math.abs
 import kotlin.math.max
@@ -37,37 +48,107 @@ import kotlin.math.roundToInt
 
 
 @Composable
-fun Chart(stockBars: List<BarInfoDto>, modifier: Modifier = Modifier) {
-    var chartState by rememberChartState(stockBars)
+fun Chart(modifier: Modifier = Modifier) {
+    val viewModel: MainActivityViewModel = viewModel()
+    val context = LocalContext.current
 
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center
-    ) {
+    when (val state = viewModel.screenState.collectAsState().value) {
+        is ScreenState.Content -> {
+            val chartState = rememberChartState(state.bars)
+            Box(
+                modifier = modifier
+                    .background(Color.Black),
+            ) {
+                CoreChart(state = chartState, onStateTransformation = { bars, scroll ->
+                    chartState.value = chartState.value.copy(
+                        visibleNumberOfBars = bars,
+                        scrolled = scroll
+                    )
+                }, onChangeSize = {
+                    chartState.value = chartState.value.copy(
+                        componentUiWidth = it.width.toFloat(),
+                        height = it.height.toFloat()
+                    )
+                })
 
-        CoreChart(state = chartState, onStateTransformation = { bars, scroll ->
-            chartState = chartState.copy(
-                visibleNumberOfBars = bars,
-                scrolled = scroll
-            )
-        }, onChangeSize = {
-            chartState = chartState.copy(
-                    componentUiWidth = it.width.toFloat(),
-                    height = it.height.toFloat()
+                TimeFrames(
+                    modifier = Modifier
+                        .wrapContentSize()
+                        .padding(16.dp)
+                        .align(Alignment.TopStart)
+                        .zIndex(5f),
+                    onClick = {
+                        viewModel.onEvent(ChartEvents.OnChangeTimeFrame(it))
+                    },
+                    selectedTimeFrame = state.selectedTimeFrame
                 )
-        })
 
-        chartState.visibleStockBarsOnScreen.firstOrNull()?.let {
-            PricesText(
-                modifier = Modifier
+                state.bars.firstOrNull()?.let {
+                    PricesText(
+                        state = chartState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clipToBounds()
+                            .padding(vertical = 32.dp)
+                            .zIndex(1f),
+                        lastPrice = it.close,
+                    )
+                }
+            }
+        }
+
+        is ScreenState.Failure -> {
+            Toast.makeText(context, state.message, Toast.LENGTH_LONG).show()
+        }
+
+        ScreenState.Loading -> {
+            Box(
+                modifier = modifier
                     .fillMaxSize()
-                    .clipToBounds()
-                    .padding(vertical = 32.dp)
-                    .zIndex(1f),
-                maxPriceEver = chartState.maxCost,
-                minPriceEver = chartState.minCost,
-                lastPrice = it.close,
-                pxPerDollar = chartState.pxPerDollar,
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        }
+
+        ScreenState.Initial -> {
+
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TimeFrames(
+    modifier: Modifier = Modifier,
+    selectedTimeFrame: TimeFrame,
+    onClick: (TimeFrame) -> Unit
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TimeFrame.values().forEach { timeFrame ->
+            val isCurrentSelected = timeFrame == selectedTimeFrame
+            val (containerColor, labelColor) =
+                if (isCurrentSelected) {
+                    Color.White to Color.Black
+                } else {
+                    Color.Black to Color.White
+                }
+            AssistChip(
+                onClick = {
+                    onClick(timeFrame)
+                },
+                label = {
+                    Text(text = timeFrame.name)
+                },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = containerColor,
+                    labelColor = labelColor
+                )
             )
         }
     }
@@ -75,20 +156,22 @@ fun Chart(stockBars: List<BarInfoDto>, modifier: Modifier = Modifier) {
 
 @Composable
 private fun CoreChart(
-    state: ChartState,
+    state: State<ChartState>,
     onStateTransformation: (Int, Float) -> Unit,
     onChangeSize: (IntSize) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val transform = rememberTransformableState(onTransformation = { zoomChange, panChange, _ ->
-        val newVisibleNumberOfBars = (state.visibleNumberOfBars / zoomChange)
-            .roundToInt()
-            .coerceIn(DEFAULT_MIN_NUMBER_OF_VISIBLE_BARS, state.stockBars.size)
+    val chartState = state.value
 
-        val newScrolledPosition = (state.scrolled + panChange.x)
+    val transform = rememberTransformableState(onTransformation = { zoomChange, panChange, _ ->
+        val newVisibleNumberOfBars = (chartState.visibleNumberOfBars / zoomChange)
+            .roundToInt()
+            .coerceIn(DEFAULT_MIN_NUMBER_OF_VISIBLE_BARS, chartState.stockBars.size)
+
+        val newScrolledPosition = (chartState.scrolled + panChange.x)
             .coerceIn(
                 0f,
-                abs(state.widthDistance * state.stockBars.size - state.componentUiWidth)
+                abs(chartState.widthDistance * chartState.stockBars.size - chartState.componentUiWidth)
             )
         onStateTransformation(newVisibleNumberOfBars, newScrolledPosition)
     })
@@ -103,19 +186,19 @@ private fun CoreChart(
             .clipToBounds()
             .padding(top = 16.dp, start = 16.dp, end = 16.dp)
     ) {
-        val minCost = state.minCost
-        val pxPerDollar = state.pxPerDollar
+        val minCost = chartState.minCost
+        val pxPerDollar = chartState.pxPerDollar
 
-        translate(left = state.scrolled) {
-            state.stockBars.forEachIndexed { index, barInfoDto ->
+        translate(left = chartState.scrolled) {
+            chartState.stockBars.forEachIndexed { index, barInfoDto ->
                 drawLine(
                     color = Color.Yellow,
                     start = Offset(
-                        size.width - index * state.widthDistance, // starting drawing from the right
+                        size.width - index * chartState.widthDistance, // starting drawing from the right
                         size.height - pxPerDollar * barInfoDto.lowest + pxPerDollar * minCost
                     ),
                     end = Offset(
-                        size.width - index * state.widthDistance,
+                        size.width - index * chartState.widthDistance,
                         size.height - pxPerDollar * barInfoDto.highest + pxPerDollar * minCost
                     ),
                 )
@@ -123,14 +206,14 @@ private fun CoreChart(
                 drawRect(
                     if (barInfoDto.open < barInfoDto.close) Color.Green else Color.Red,
                     topLeft = Offset(
-                        size.width - index * state.widthDistance - state.widthDistance / 4,
+                        size.width - index * chartState.widthDistance - chartState.widthDistance / 4,
                         size.height - pxPerDollar * max(
                             barInfoDto.open,
                             barInfoDto.close
                         ) + pxPerDollar * minCost
                     ),
                     size = Size(
-                        width = state.widthDistance / 2,
+                        width = chartState.widthDistance / 2,
                         height = pxPerDollar * abs(barInfoDto.open - barInfoDto.close)
                     )
                 )
@@ -142,10 +225,8 @@ private fun CoreChart(
 @OptIn(ExperimentalTextApi::class)
 @Composable
 private fun PricesText(
-    maxPriceEver: Float,
-    minPriceEver: Float,
+    state: State<ChartState>,
     lastPrice: Float,
-    pxPerDollar: Float,
     modifier: Modifier = Modifier
 ) {
     val measurer = rememberTextMeasurer()
@@ -156,10 +237,10 @@ private fun PricesText(
             .padding(vertical = 32.dp)
     ) {
         drawBoundaryPrices(
-            maxPriceEver = maxPriceEver,
-            minPriceEver = minPriceEver,
+            maxPriceEver = state.value.maxCost,
+            minPriceEver = state.value.minCost,
             lastPrice = lastPrice,
-            pxPerDollar = pxPerDollar,
+            pxPerDollar = state.value.pxPerDollar,
             textMeasurer = measurer
         )
     }
