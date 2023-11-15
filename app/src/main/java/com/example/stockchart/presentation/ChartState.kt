@@ -15,6 +15,7 @@ import kotlin.math.roundToInt
 data class ChartState(
     val stockBars: List<BarInfoDto>,
     val componentUiWidth: Float = 0f,
+    val height: Float = 0f,
     val scrolled: Float = 0f,
     val visibleNumberOfBars: Int = DEFAULT_NUMBER_OF_VISIBLE_BARS
 ) {
@@ -24,12 +25,25 @@ data class ChartState(
 
     val visibleStockBarsOnScreen: List<BarInfoDto>
         get() {
+            if (widthDistance <= 0) return emptyList<BarInfoDto>()
             val passedBy = (scrolled / widthDistance)
                 .roundToInt()
                 .coerceAtLeast(0)
             val endIndex = (passedBy + visibleNumberOfBars).coerceAtMost(stockBars.size - 1)
-            return stockBars.subList(min(passedBy, endIndex), max(passedBy, endIndex)) // sometimes passedBy > endIndex
+            return stockBars.subList(
+                min(passedBy, endIndex),
+                max(passedBy, endIndex)
+            ) // sometimes passedBy > endIndex
         }
+
+    val minCost: Float
+        get() = visibleStockBarsOnScreen.minOfOrNull { it.lowest } ?: 0f
+
+    val maxCost: Float
+        get() = visibleStockBarsOnScreen.maxOfOrNull { it.lowest } ?: 1f
+
+    val pxPerDollar: Float
+        get() = height / (maxCost - minCost)
 
     companion object {
         const val DEFAULT_NUMBER_OF_VISIBLE_BARS = 80
